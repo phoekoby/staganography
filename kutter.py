@@ -44,43 +44,52 @@ def extract_blue_channel(picture):
     blue_img[:, :, 2] = blue_channel
     return blue_img
 
+def generate_unique_x_y(before, height, width):
+    x = int(np.random.rand() * (height - 2 * omega) + omega)
+    y = int(np.random.rand() * (width - 2 * omega) + omega)
+    while (x, y) in before:
+        x = int(np.random.rand() * (height - 2 * omega) + omega)
+        y = int(np.random.rand() * (width - 2 * omega) + omega)
+    return x, y
 
 # Метод сокрытия сообщения в картинке
-def hide_message(message_bits, picture, l, omega):
+def hide_message(message_bits, picture, l, omega, key):
     print(message_bits[:20])
     # Проверка вместимости стегоконтейнера, по сравнению с длинной сообщения
     if len(message_bits) > (picture.shape[0] - omega) * (picture.shape[1] - omega):
         print("I can not hide message")
         return picture
-    i, j = omega, omega
+    height = picture.shape[0]
+    width = picture.shape[1]
+    np.random.seed(key)
+    before = []
     image = np.copy(picture)
     for bit in message_bits:
-        if j == image.shape[1] - omega:
-            j = omega
-            i += 1
+        x, y = generate_unique_x_y(before, height, width)
+        before.append((x, y))
         if bit == 0:
-            blue_ = int(min(255, blue(image[i][j]) + l * L(image[i][j])))
+            blue_ = int(min(255, blue(image[x][y]) + l * L(image[x][y])))
         else:
-            blue_ = int(max(0, blue(image[i][j]) - l * L(image[i][j])))
-        image[i][j][blue_index] = blue_
-        j += 1
+            blue_ = int(max(0, blue(image[x][y]) - l * L(image[x][y])))
+        image[x][y][blue_index] = blue_
+
     return image
 
 
 # Метод получения сообщения из картинки
-def get_message_from_image(picture, omega, N):
+def get_message_from_image(picture, omega, N, key):
     res_bites = []
-    i, j = omega, omega
-    for m in range(N):
-        if j == picture.shape[1] - omega:
-            j = omega
-            i += 1
-        if picture[i][j][blue_index] <= I(omega, picture, i, j):
+    height = picture.shape[0]
+    width = picture.shape[1]
+    np.random.seed(key)
+    before = []
+    for i in range(N):
+        x, y = generate_unique_x_y(before, height, width)
+        before.append((x,y))
+        if picture[x][y][blue_index] <= I(omega, picture, x, y):
             res_bites.append(1)
         else:
             res_bites.append(0)
-        j += 1
-    print(res_bites[:20])
     return res_bites
 
 
@@ -141,17 +150,18 @@ if __name__ == "__main__":
     # Преобразование сообщения в массив битов
     bites = to_bits(text)
 
-    energy = 0.05
+    energy = 1
     skimage.io.imsave("before-blue-channel.jpg", extract_blue_channel(image))
 
-    omega = 3
+    omega = 5
+    key = 100
     # Получение заполненного стегокнтейнера
-    encoded_image = hide_message(bites, image, energy, omega=omega)
+    encoded_image = hide_message(bites, image, energy, omega, key=key)
     skimage.io.imsave("after-blue-channel.jpg", extract_blue_channel(encoded_image))
     skimage.io.imsave("encoded-cat.jpg", encoded_image)
     # Получение соолбщения из заполненного стегокнтейнера
 
-    decoded_bits_message = get_message_from_image(encoded_image, omega, len(bites))
+    decoded_bits_message = get_message_from_image(encoded_image, omega, len(bites), key=key)
     # Вывод строки из полученного массива битов сообщения
     print(from_bits(decoded_bits_message))
 
