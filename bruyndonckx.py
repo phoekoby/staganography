@@ -1,11 +1,8 @@
 import math
-import random
-
 import numpy as np
 import skimage.io
 
 block_size = 8
-alpha = 0.02
 
 # Получение из картинки только голубого канала
 def extract_blue_channel(picture):
