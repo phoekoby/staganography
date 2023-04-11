@@ -17,11 +17,12 @@ def blue(RGB):
 def red(RGB):
     return RGB[red_index]
 
-
+# Значение яркости
 def L(RGB):
     return int(0.299 * red(RGB) + 0.587 * green(RGB) + 0.114 * blue(RGB))
 
 
+# Нахождение I*, идем во все четыре стороны и прибавляем значение голубого байта
 def I(omega, picture, x, y):
     height = picture.shape[0]
     width = picture.shape[1]
@@ -37,13 +38,14 @@ def I(omega, picture, x, y):
             res += blue(picture[x - j, y])
     return (1. / (4. * omega)) * res
 
-
+#Получение картинки в синем канале
 def extract_blue_channel(picture):
     blue_channel = picture[:, :, 2]
     blue_img = np.zeros(picture.shape)
     blue_img[:, :, 2] = blue_channel
     return blue_img
 
+#Генерация уникальных координат пикселя для встраивания
 def generate_unique_x_y(before, height, width):
     x = int(np.random.rand() * (height - 2 * omega) + omega)
     y = int(np.random.rand() * (width - 2 * omega) + omega)
@@ -52,21 +54,28 @@ def generate_unique_x_y(before, height, width):
         y = int(np.random.rand() * (width - 2 * omega) + omega)
     return x, y
 
+
 # Метод сокрытия сообщения в картинке
 def hide_message(message_bits, picture, l, omega, key):
-    print(message_bits[:20])
     # Проверка вместимости стегоконтейнера, по сравнению с длинной сообщения
     if len(message_bits) > (picture.shape[0] - omega) * (picture.shape[1] - omega):
         print("I can not hide message")
         return picture
+
     height = picture.shape[0]
     width = picture.shape[1]
+    # Инициализируем рандом ключом
     np.random.seed(key)
+
+    #Использованные координаты
     before = []
     image = np.copy(picture)
+    # Идем по каждому биту
     for bit in message_bits:
+        # Генерируем координаты
         x, y = generate_unique_x_y(before, height, width)
         before.append((x, y))
+        #Встраиваем
         if bit == 0:
             blue_ = int(min(255, blue(image[x][y]) + l * L(image[x][y])))
         else:
@@ -79,13 +88,19 @@ def hide_message(message_bits, picture, l, omega, key):
 # Метод получения сообщения из картинки
 def get_message_from_image(picture, omega, N, key):
     res_bites = []
+
     height = picture.shape[0]
     width = picture.shape[1]
+    # Инициализируем рандом ключом
     np.random.seed(key)
+    #Использованные координаты
     before = []
+
     for i in range(N):
+        # Генерируем координаты
         x, y = generate_unique_x_y(before, height, width)
-        before.append((x,y))
+        before.append((x, y))
+        #Извлекаем
         if picture[x][y][blue_index] <= I(omega, picture, x, y):
             res_bites.append(1)
         else:
@@ -117,6 +132,29 @@ def from_bits(bits):
         chars.append(chr(int(''.join([str(bit) for bit in byte]), 2)))
     return ''.join(chars)
 
+#Метод для подсчета операции Лаплласа
+def lapllas(matrix):
+    res = np.zeros_like(matrix)
+    for i in range(matrix.shape[0]):
+        for j in range(matrix.shape[1]):
+            s = 0
+            amount = 0
+            if i >= 0:
+                s += matrix[i - 1][j]
+                amount += 1
+            if j >= 0:
+                s += matrix[i][j - 1]
+                amount += 1
+            if i < matrix.shape[0] - 1:
+                s += matrix[i + 1][j]
+                amount += 1
+            if j < matrix.shape[1] - 1:
+                s += matrix[i][j + 1]
+                amount += 1
+            s -= amount * matrix[i][j]
+            res[i][j] = s
+    return res
+
 
 # Метод для подсчета метрик
 def metrics(empty, full):
@@ -135,7 +173,16 @@ def metrics(empty, full):
     H = empty.shape[0]
     W = empty.shape[1]
     m_PSNR = W * H * ((np.max(empty) ** 2) / np.sum((empty - full) * (empty - full)))
-    print(f"Пиковое отношение сигнал-шум : %f" % m_PSNR)
+    print(f"Пиковое отношение сигнал-шум: %f" % m_PSNR)
+    # Подсчет Среднего квадратичного отклонения по формуле
+    m_MSE = (1 / (W * H)) * np.sum((empty - full) * (empty - full))
+    print(f"Среднее квадратичное отклонение: %f" % m_MSE)
+
+    # Подсчет Среднего квадратичного отклонения лапласиана
+    empty_lapllas = lapllas(empty)
+    full_laplas = lapllas(full)
+    m_LMSE = np.sum((empty_lapllas - full_laplas) ** 2) / np.sum(empty_lapllas * empty_lapllas)
+    print(f"Среднее квадратичное отклонение лапласиана: %f" % m_LMSE)
 
 
 if __name__ == "__main__":
@@ -159,9 +206,10 @@ if __name__ == "__main__":
     encoded_image = hide_message(bites, image, energy, omega, key=key)
     skimage.io.imsave("after-blue-channel.jpg", extract_blue_channel(encoded_image))
     skimage.io.imsave("encoded-cat.jpg", encoded_image)
-    # Получение соолбщения из заполненного стегокнтейнера
 
+    # Получение соолбщения из заполненного стегокнтейнера
     decoded_bits_message = get_message_from_image(encoded_image, omega, len(bites), key=key)
+
     # Вывод строки из полученного массива битов сообщения
     print(from_bits(decoded_bits_message))
 

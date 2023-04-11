@@ -4,30 +4,10 @@ import random
 import numpy as np
 import skimage.io
 
-blue_index = 2
-green_index = 1
-red_index = 0
-
 block_size = 8
 alpha = 0.02
 
-
-def green(RGB):
-    return RGB[green_index]
-
-
-def blue(RGB):
-    return RGB[blue_index]
-
-
-def red(RGB):
-    return RGB[red_index]
-
-
-def L(RGB):
-    return int(0.299 * red(RGB) + 0.587 * green(RGB) + 0.114 * blue(RGB))
-
-
+# Получение из картинки только голубого канала
 def extract_blue_channel(picture):
     blue_channel = picture[:, :, 2]
     blue_img = np.zeros(picture.shape)
@@ -35,9 +15,11 @@ def extract_blue_channel(picture):
     return blue_img
 
 
-def br_mask(image):
+# Первый этап, сортировка по яркости, затем делим на две части и разбиваем на категори
+def group_by_brightness(image):
     a = np.zeros((block_size ** 2, 3))
     n = 0
+    # Составляем массив с координатами и значением яркости
     for i in range(block_size):
         for j in range(block_size):
             a[n][0] = i
@@ -45,21 +27,24 @@ def br_mask(image):
             r, g, b = image[i, j, 0:3]
             a[n][2] = r * 0.299 + g * 0.587 + b * 0.114
             n += 1
-
+    # Сортируем по яркости
     a = a[np.argsort(a[:, 2])]
-    b_mask = np.zeros((block_size, block_size), dtype=np.int_)
+
+    mask = np.zeros((block_size, block_size), dtype=np.int_)
+
+    # Составляем маску
     for b in a[:(block_size ** 2) // 2]:
         i = math.floor(b[0])
         j = math.floor(b[1])
-        b_mask[i][j] = 0
+        mask[i][j] = 0
 
     for b in a[(block_size ** 2) // 2:]:
         i = math.floor(b[0])
         j = math.floor(b[1])
-        b_mask[i][j] = 1
-    return b_mask
+        mask[i][j] = 1
+    return mask
 
-
+# Генерация случайной маски (разбиение на группы А и B)
 def mask():
     m = np.zeros((block_size, block_size), dtype=np.int_)
     for i in range(block_size):
@@ -67,7 +52,7 @@ def mask():
             m[i][j] = int(np.random.rand() * 2)
     return m
 
-
+# Подсчет средней яркости группы и категории
 def brightness(image, mask):
     l = 0
     n = np.sum(mask)
@@ -80,13 +65,14 @@ def brightness(image, mask):
     l = l / n
     return l, n
 
-
+# Увеличиваем яркость пикселей на маске
 def add_brightness(image, mask, delta):
     for i in range(block_size):
         for j in range(block_size):
             if mask[i, j] == 0:
                 continue
             r, g, b = image[i, j, 0:3]
+
             r += delta
             b += delta
             g += delta
@@ -99,7 +85,7 @@ def add_brightness(image, mask, delta):
             image[i, j, 0:3] = r, g, b
     return image
 
-
+# Уменьшаем яркость пикселей на маске
 def remove_brightness(image, mask, delta):
     for i in range(block_size):
         for j in range(block_size):
@@ -118,11 +104,13 @@ def remove_brightness(image, mask, delta):
             image[i, j, 0:3] = r, g, b
     return image
 
-
+# Метод скрытия сообщения
 def hide_message(message_bits, img, l_b, key, delta):
     img = img.copy()
+    # Инициализация рандом ключом
     np.random.seed(key)
-    r_mask = mask()  # a or b = 0 or 1
+
+    r_mask = mask()  # A = 0, B = 1
     m_i = 0
 
     w = img.shape[1]
@@ -130,7 +118,7 @@ def hide_message(message_bits, img, l_b, key, delta):
 
     w_b = math.floor(w / block_size)
     h_b = math.floor(h / block_size)
-
+    # Идем по всем блокам в картинке
     for i in range(h_b):
         for j in range(w_b):
             if m_i >= l_b:
@@ -139,29 +127,22 @@ def hide_message(message_bits, img, l_b, key, delta):
             x = j * block_size
             y = i * block_size
 
-            group = br_mask(img[y:y + block_size, x:x + block_size, :])
+            # Группируем по яркости
+            group = group_by_brightness(img[y:y + block_size, x:x + block_size, :])
 
+            # Накладываем маски группы и категории
             mask_1_a = 1 * np.logical_and(np.logical_not(r_mask), np.logical_not(group))
             mask_2_a = 1 * np.logical_and(np.logical_not(r_mask), group)
             mask_1_b = 1 * np.logical_and(r_mask, np.logical_not(group))
             mask_2_b = 1 * np.logical_and(r_mask, group)
 
-            l_1_a, n_1_a = brightness(img[y:y + block_size, x:x + block_size, :], mask_1_a)
-            l_2_a, n_2_a = brightness(img[y:y + block_size, x:x + block_size, :], mask_2_a)
-            l_1_b, n_1_b = brightness(img[y:y + block_size, x:x + block_size, :], mask_1_b)
-            l_2_b, n_2_b = brightness(img[y:y + block_size, x:x + block_size, :], mask_2_b)
             bit = message_bits[m_i]
+            # Увлеичиваем или уменьшаем яркость в зависимости от значения бита
             if bit == 1:
-                # add_brightness(img[y:y + block_size, x:x + block_size, :], mask_1_a, delta)
                 remove_brightness(img[y:y + block_size, x:x + block_size, :], mask_1_b, delta)
-
                 add_brightness(img[y:y + block_size, x:x + block_size, :], mask_2_a, delta)
-                # remove_brightness(img[y:y + block_size, x:x + block_size, :], mask_2_b, delta)
             else:
                 remove_brightness(img[y:y + block_size, x:x + block_size, :], mask_1_a, delta)
-                # add_brightness(img[y:y + block_size, x:x + block_size, :], mask_1_b, delta)
-                #
-                # remove_brightness(img[y:y + block_size, x:x + block_size, :], mask_2_a, delta)
                 add_brightness(img[y:y + block_size, x:x + block_size, :], mask_2_b, delta)
             m_i += 1
 
@@ -172,16 +153,23 @@ def hide_message(message_bits, img, l_b, key, delta):
 
 # Метод получения сообщения из картинки
 def get_message_from_image(picture, l_b, key):
-    np.random.seed(key)
-    r_mask = mask()
     picture = picture.copy()
+
+    # Инициализация рандом ключом
+    np.random.seed(key)
+
+    r_mask = mask() # A = 0, B = 1
+
     w = picture.shape[1]
     h = picture.shape[0]
 
     w_b = math.floor(w / block_size)
     h_b = math.floor(h / block_size)
+
     m_i = 0
     res_bits = []
+
+    # Идем по всем блокам
     for i in range(h_b):
         for j in range(w_b):
             if m_i >= l_b:
@@ -190,25 +178,31 @@ def get_message_from_image(picture, l_b, key):
             x = j * block_size
             y = i * block_size
 
-            group = br_mask(picture[y:y + block_size, x:x + block_size, :])
+            # Макса группы по яркости
+            group = group_by_brightness(picture[y:y + block_size, x:x + block_size, :])
 
+            # Накладываем маски группы и категории
             mask_1_a = 1 * np.logical_and(np.logical_not(r_mask), np.logical_not(group))
             mask_2_a = 1 * np.logical_and(np.logical_not(r_mask), group)
             mask_1_b = 1 * np.logical_and(r_mask, np.logical_not(group))
             mask_2_b = 1 * np.logical_and(r_mask, group)
 
+            # Находим средние значения для каждой группы-категории блока
             l_1_a, n_1_a = brightness(picture[y:y + block_size, x:x + block_size, :], mask_1_a)
             l_2_a, n_2_a = brightness(picture[y:y + block_size, x:x + block_size, :], mask_2_a)
             l_1_b, n_1_b = brightness(picture[y:y + block_size, x:x + block_size, :], mask_1_b)
             l_2_b, n_2_b = brightness(picture[y:y + block_size, x:x + block_size, :], mask_2_b)
 
             bit = 0
+            # Вытаскиваем бит
             if l_1_a - l_1_b < 0 and l_2_a - l_2_b < 0:
                 bit = 0
             elif l_1_a - l_1_b > 0 and l_2_a - l_2_b > 0:
                 bit = 1
+
             res_bits.append(bit)
             m_i += 1
+
     return res_bits
 
 
@@ -236,11 +230,30 @@ def from_bits(bits):
         chars.append(chr(int(''.join([str(bit) for bit in byte]), 2)))
     return ''.join(chars)
 
-
+#Метод для подсчета операции Лаплласа
+def lapllas(matrix):
+    res = np.zeros_like(matrix)
+    for i in range(matrix.shape[0]):
+        for j in range(matrix.shape[1]):
+            s = 0
+            amount = 0
+            if i >= 0:
+                s += matrix[i - 1][j]
+                amount += 1
+            if j >= 0:
+                s += matrix[i][j - 1]
+                amount += 1
+            if i < matrix.shape[0] - 1:
+                s += matrix[i + 1][j]
+                amount += 1
+            if j < matrix.shape[1] - 1:
+                s += matrix[i][j + 1]
+                amount += 1
+            s -= amount * matrix[i][j]
+            res[i][j] = s
+    return res
 # Метод для подсчета метрик
 def metrics(empty, full):
-    empty = empty
-    full = full
     # Подсчет Максимального абсолютного отклонения по формуле
     max_d = np.max(np.abs(empty.astype(int) - full.astype(int)))
     print(f"Максимальное абсолютное отклонение: %d" % max_d)
@@ -254,12 +267,20 @@ def metrics(empty, full):
     H = empty.shape[0]
     W = empty.shape[1]
     m_PSNR = W * H * ((np.max(empty) ** 2) / np.sum((empty - full) * (empty - full)))
-    print(f"Пиковое отношение сигнал-шум : %f" % m_PSNR)
+    print(f"Пиковое отношение сигнал-шум: %f" % m_PSNR)
+    # Подсчет Среднего квадратичного отклонения по формуле
+    m_MSE = (1 / (W * H)) * np.sum((empty - full) * (empty - full))
+    print(f"Среднее квадратичное отклонение: %f" % m_MSE)
 
+    # Подсчет Среднего квадратичного отклонения лапласиана
+    empty_lapllas = lapllas(empty)
+    full_laplas = lapllas(full)
+    m_LMSE = np.sum((empty_lapllas - full_laplas) ** 2) / np.sum(empty_lapllas * empty_lapllas)
+    print(f"Среднее квадратичное отклонение лапласиана: %f" % m_LMSE)
 
 if __name__ == "__main__":
     # Чтение картинки
-    image = read_image("cat.jpg")
+    image = read_image("png-cat.png")
     # Чтение сообщения из файла message.txt
     lines = []
     with open("message.txt", 'r', encoding='utf8') as f:
@@ -270,12 +291,16 @@ if __name__ == "__main__":
     bites = to_bits(text)
 
     skimage.io.imsave("before-blue-channel.png", extract_blue_channel(image))
+
+    #ключ
     key = 100
-    delta = 1
+
+    # дельта l
+    delta = 10
     # Получение заполненного стегокнтейнера
     encoded_image = hide_message(bites, image, len(bites), key=key, delta=delta)
     skimage.io.imsave("after-blue-channel.png", extract_blue_channel(encoded_image))
-    skimage.io.imsave("encoded-cat.jpg", encoded_image)
+    skimage.io.imsave("encoded-cat-png.png", encoded_image)
     # Получение соолбщения из заполненного стегокнтейнера
 
     decoded_bits_message = get_message_from_image(encoded_image, len(bites), key)
